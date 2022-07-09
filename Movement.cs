@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-using HarmonyLib;
 using PhantomBrigade.Data;
 using UnityEngine;
 
@@ -38,14 +37,14 @@ namespace EchKode.PBMods.EditRunAction
 		}
 
 		// Constant pulled from the code (ActionUtility.TrimPositionalActionsFromTime)
-		internal const float pathLengthMinimum = 1.5f;
+		private const float pathLengthMinimum = 1.5f;
 
 		private static Cache cachedMovements;
 		private static float currentEndTime;
 
-		internal static string Stringify(ActionEntity movement)
+		private static string Stringify(ActionEntity movement)
 		{
-			var movementType = movement.dataLinkActionCore.data.trackType == PhantomBrigade.Data.TrackType.Double
+			var movementType = movement.dataLinkActionCore.data.trackType == TrackType.Double
 				? movement.hasMovementDash
 					? "dash"
 					: "melee"
@@ -72,12 +71,10 @@ namespace EchKode.PBMods.EditRunAction
 			var combatUnit = Contexts.sharedInstance.combat.GetEntityWithId(selectedAction.actionOwner.combatID);
 			if (!combatUnit.isPlayerControllable)
 			{
-				FileLog.Log("!!! PBMods owner of selected action is not controllable");
 				return (false, null);
 			}
 			if (!PhantomBrigade.CombatUIUtility.IsUnitFriendly(combatUnit))
 			{
-				FileLog.Log("!!! PBMods owner of selected action is not friendly");
 				return (false, null);
 			}
 
@@ -107,17 +104,14 @@ namespace EchKode.PBMods.EditRunAction
 
 				if (action.dataLinkActionCore.data.trackType == TrackType.Double)
 				{
-					FileLog.Log($"!!! PBMods found double track action after selected action: name={action.dataKeyAction.s}");
 					return (false, null);
 				}
 
-				FileLog.Log($"!!! PBMods added movement action: {Stringify(action)}");
 				movements.Add(action);
 			}
 
 			if (movements.Count == 0)
 			{
-				FileLog.Log($"!!! PBMods no valid movement actions for unit P-{combatUnit.id.id}");
 				return (false, null);
 			}
 
@@ -127,7 +121,6 @@ namespace EchKode.PBMods.EditRunAction
 
 		internal static void CacheMovements(List<ActionEntity> movements)
 		{
-			var k = 0;
 			cachedMovements.Clear();
 			var first = true;
 			foreach (var movement in movements)
@@ -136,25 +129,10 @@ namespace EchKode.PBMods.EditRunAction
 
 				if (!first)
 				{
-					// Movement paths should share one point (last point for the one before, first point for the one after).
+					// Adjacent movement paths share one point (last point for the one before, first point for the one after).
 					cachedMovements.Points.RemoveAt(cachedMovements.Points.Count - 1);
 				}
 				first = false;
-
-				FileLog.Log($"!!! PBMods adding path points to cache: action={movement.id.id}; points={movement.movementPath.points.Count}; length={GetPathLength(movement.movementPath.points)}; duration={movement.duration.f}");
-				k = 0;
-				foreach (var point in movement.movementPath.points)
-				{
-					k += 1;
-					FileLog.Log($"\t{k}: {point}");
-				}
-				FileLog.Log($"!!! PBMods adding path links to cache: action={movement.id.id}");
-				k = 0;
-				foreach (var link in movement.movementPath.links)
-				{
-					k += 1;
-					FileLog.Log($"\t{k}: {link.type}:{link.destinationIndex}");
-				}
 
 				cachedMovements.Points.AddRange(movement.movementPath.points);
 				cachedMovements.Links.AddRange(movement.movementPath.links);
@@ -165,22 +143,6 @@ namespace EchKode.PBMods.EditRunAction
 
 			var selected = movements.First();
 			currentEndTime = selected.startTime.f + selected.duration.f;
-
-			FileLog.Log($"!!! PBMods cached movement totals: actions={cachedMovements.Durations.Count}; points={cachedMovements.Points.Count}; links={cachedMovements.Links.Count}; length={cachedMovements.TotalLength}; duration={cachedMovements.TotalDuration}");
-			FileLog.Log("!!! PBMods cached path points");
-			k = 0;
-			foreach (var point in cachedMovements.Points)
-			{
-				k += 1;
-				FileLog.Log($"\t{k}: {point}");
-			}
-			FileLog.Log("!!! PBMods cached path links");
-			k = 0;
-			foreach (var link in cachedMovements.Links)
-			{
-				k += 1;
-				FileLog.Log($"\t{k}: {link.type}:{link.destinationIndex}");
-			}
 		}
 
 		private static double GetPathLength(List<Vector3> vectorPath)
@@ -211,7 +173,6 @@ namespace EchKode.PBMods.EditRunAction
 			var combat = Contexts.sharedInstance.combat;
 			var timeTarget = combat.predictionTimeTarget.f;
 			var durationChange = Contexts.sharedInstance.combat.predictionTimeTarget.f - currentEndTime;
-			FileLog.Log($"!!! PBMods move edit times: timeTarget={timeTarget}; change={durationChange}; actionStart={selected.startTime.f}; clampedStart={clampedStartTime}; clampedEnd={clampedEndTime}");
 
 			if (timeTarget < clampedStartTime)
 			{
@@ -235,7 +196,7 @@ namespace EchKode.PBMods.EditRunAction
 			ChangePath(durationChange, movements);
 		}
 
-		internal static float PathLengthToDuration(ActionEntity selected, float pathLength)
+		private static float PathLengthToDuration(ActionEntity selected, float pathLength)
 		{
 			var combatEntity = PhantomBrigade.IDUtility.GetCombatEntity(selected.actionOwner.combatID);
 			var f = combatEntity.movementSpeedCurrent.f;
@@ -246,13 +207,10 @@ namespace EchKode.PBMods.EditRunAction
 
 		private static void ChangePath(float durationChange, List<ActionEntity> movements)
 		{
-			FileLog.Log("!!! PBMods change path");
-
 			var selected = movements.First();
 			var pathLength = (float)GetPathLength(selected.movementPath.points);
 			if (durationChange < 0f && pathLength <= pathLengthMinimum)
 			{
-				FileLog.Log("!!! PBMods shrink early exit, path at minimum");
 				return;
 			}
 
@@ -297,7 +255,6 @@ namespace EchKode.PBMods.EditRunAction
 		{
 			var duration = cachedMovements.Durations[index];
 			var accumulatedLength = segments[index - 1].AccumulatedLength;
-			FileLog.Log($"!!! PBMods accumulate path: index={index}; action={movement.id.id}; acc={accumulatedLength}; duration={duration}");
 			var (length, points, links) = ProcessAndTrimPath(
 				cachedMovements.Points,
 				cachedMovements.Links,
@@ -305,11 +262,6 @@ namespace EchKode.PBMods.EditRunAction
 				PathLengthToDuration(movement, cachedMovements.TotalLength),
 				duration,
 				accumulatedLength);
-
-			if (points.Count != links.Count + 1)
-			{
-				FileLog.Log($"!!! PBMods points/links count mismatch: action={movement.id.id}; points={points.Count}; links={links.Count}; duration={duration}");
-			}
 
 			return new Accumulator()
 			{
@@ -338,7 +290,6 @@ namespace EchKode.PBMods.EditRunAction
 			var outputLinks = new List<Area.AreaNavLink>(inputLinks.Count);
 
 			var endLength = System.Math.Round((double)inputPathLength * actionDurationClamped / inputPathDuration + lengthOfLastPath, 3);
-			FileLog.Log($"!!! PBMods trim path: length={inputPathLength}; duration={inputPathDuration}; clamp={actionDurationClamped}; lastPath={lengthOfLastPath}; end={endLength}");
 			var currentLength = 0.0;
 			var lastLength = System.Math.Round((double)lengthOfLastPath, 3);
 
@@ -346,9 +297,7 @@ namespace EchKode.PBMods.EditRunAction
 			{
 				var inputPoint1 = inputPoints[index - 1];
 				var inputPoint2 = inputPoints[index];
-				//var linkLength = Vector3.Distance(inputPoint1, inputPoint2);
 				var linkLength = Distance(inputPoint1.x, inputPoint1.y, inputPoint1.z, inputPoint2.x, inputPoint2.y, inputPoint2.z);
-				FileLog.Log($"!!! PBMods distance calc: p1={inputPoint1}; p2={inputPoint2}; d={linkLength}");
 				var inputLink = inputLinks[index - 1];
 				var accumulatedLength = currentLength;
 				currentLength += linkLength;
@@ -364,21 +313,14 @@ namespace EchKode.PBMods.EditRunAction
 				{
 					var p1 = inputPoint1;
 					var p2 = inputPoint2;
-					var s1 = $"{index}";
-					var s2 = $"{index + 1}";
 					var len = linkLength;
 					var isLast = false;
-					if (RoughlyEqual(accumulatedLength, lastLength))
+
+					if (!RoughlyEqual(accumulatedLength, lastLength) && accumulatedLength < lastLength)
 					{
-						FileLog.Log($"!!! PBMods adding first link @ exact start: prior={lastLength}; acc={accumulatedLength}; end={endLength}");
-					}
-					else if (accumulatedLength < lastLength)
-					{
-						FileLog.Log($"!!! PBMods first link @ interpolated start: prior={lastLength}; acc={accumulatedLength}; end={endLength}");
 						var fragment = currentLength - lengthOfLastPath;
 						var t = 1.0 - fragment / linkLength;
 						p1 = Vector3.Lerp(inputPoint1, inputPoint2, (float)t);
-						s1 = "interpolated";
 						len = Distance(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
 					}
 
@@ -387,20 +329,13 @@ namespace EchKode.PBMods.EditRunAction
 						var num7 = endLength - accumulatedLength;
 						var t = num7 / linkLength;
 						p2 = Vector3.Lerp(inputPoint1, inputPoint2, (float)t);
-						s2 = "interpolated";
 						len = Distance(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
 						isLast = true;
 					}
 
 					outputPoints.Add(p1);
-					FileLog.Log($"\t{outputPoints.Count}: {p1} ({s1})");
 					outputPoints.Add(p2);
-					FileLog.Log($"\t{outputPoints.Count}: {p2} ({s2})");
 					outputLinks.Add(inputLink);
-					if (outputPoints.Count != outputLinks.Count + 1)
-					{
-						FileLog.Log($"!!! PBMods points/links desync @ exact start: index={index}; points={outputPoints.Count}; links={outputLinks.Count}");
-					}
 					outputLength += len;
 					if (isLast)
 					{
@@ -409,9 +344,7 @@ namespace EchKode.PBMods.EditRunAction
 				}
 				else if (currentLength < endLength || atEnd)
 				{
-					FileLog.Log($"!!! PBMods link: acc={accumulatedLength}; current={currentLength}; end={endLength}; atEnd={atEnd}");
 					outputPoints.Add(inputPoint2);
-					FileLog.Log($"\t{outputPoints.Count}: {inputPoint2} ({index + 1})");
 					outputLinks.Add(inputLink);
 					outputLength += linkLength;
 					if (atEnd)
@@ -421,30 +354,16 @@ namespace EchKode.PBMods.EditRunAction
 				}
 				else
 				{
-					FileLog.Log($"!!! PBMods last link: acc={accumulatedLength}; current={currentLength}; end={endLength}");
 					var num7 = endLength - accumulatedLength;
 					var t = num7 / linkLength;
 					var b = Vector3.Lerp(inputPoint1, inputPoint2, (float)t);
 					outputPoints.Add(b);
-					FileLog.Log($"\t{outputPoints.Count}: {b} (interpolated)");
 					outputLinks.Add(inputLink);
-					if (outputPoints.Count != outputLinks.Count + 1)
-					{
-						FileLog.Log($"!!! PBMods points/links desync @ interpolated end: index={index}; points={outputPoints.Count}; links={outputLinks.Count}");
-					}
 					outputLength += Distance(inputPoint1.x, inputPoint1.y, inputPoint1.z, b.x, b.y, b.z);
 					break;
 				}
 			}
 
-			FileLog.Log($"!!! PBMods trim path: length={outputLength}; points={outputPoints.Count}; links={outputLinks.Count}");
-			FileLog.Log("!!! PBMods output path points");
-			var k = 0;
-			foreach (var point in outputPoints)
-			{
-				k += 1;
-				FileLog.Log($"\t{k}: {point}");
-			}
 			return ((float)outputLength, outputPoints, outputLinks);
 		}
 
@@ -462,15 +381,6 @@ namespace EchKode.PBMods.EditRunAction
 		{
 			foreach (var segment in segments)
 			{
-				if (segment.Points.Count == 0)
-				{
-					FileLog.Log($"!!! PBMods attempting to update movement with 0 path points: actionID={segment.Action.id.id}");
-				}
-				if (segment.Links.Count == 0)
-				{
-					FileLog.Log($"!!! PBMods attempting to update movement with 0 link points: actionID={segment.Action.id.id}");
-				}
-
 				UpdateMovement(
 					segment.Action,
 					segment.Points,

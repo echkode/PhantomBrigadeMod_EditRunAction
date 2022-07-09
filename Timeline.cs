@@ -18,7 +18,7 @@ namespace EchKode.PBMods.EditRunAction
 		private static System.Action<object> onActionDrag;
 		private static System.Action<object> onActionDragEnd;
 
-		internal static PlannedActionMap helpersActionsPlanned;
+		private static PlannedActionMap helpersActionsPlanned;
 
 		private static int selectedActionID;
 
@@ -87,7 +87,6 @@ namespace EchKode.PBMods.EditRunAction
 				return;
 			}
 
-			FileLog.Log("!!! PBMods OnActionDrag");
 			var actionEntity = PhantomBrigade.IDUtility.GetActionEntity(actionID);
 			var (ok, movements) = Movement.GetPathedMovementActions(actionEntity);
 			if (!ok)
@@ -120,18 +119,13 @@ namespace EchKode.PBMods.EditRunAction
 				return;
 			}
 
-			var actionName = actionEntity.dataKeyAction.s;
-			FileLog.Log($"!!! PBMods selected action: name={actionName}");
-
 			if (!actionEntity.hasDataLinkActionMovement)
 			{
-				FileLog.Log("!!! PBMods selected action is not a movement action");
 				return;
 			}
 
 			if (!actionEntity.hasMovementPath)
 			{
-				FileLog.Log("!!! PBMods selected action is not a pathed movement action");
 				return;
 			}
 
@@ -139,9 +133,6 @@ namespace EchKode.PBMods.EditRunAction
 			{
 				return;
 			}
-
-			FileLog.Log($"!!! PBMods minimums: pathLength={Movement.pathLengthMinimum}; duration={Movement.PathLengthToDuration(actionEntity, Movement.pathLengthMinimum)}");
-			FileLog.Log($"!!! PBMods selected movement action: {Movement.Stringify(actionEntity)}");
 
 			// Only hits on the pointy part of the painted action will trigger this logic.
 			// That's to avoid a drastic change when the end of the action snaps to where the mouse pointer is in the timeline.
@@ -152,7 +143,6 @@ namespace EchKode.PBMods.EditRunAction
 			var hitDelta = PhantomBrigade.CombatUtilities.ClampTimeInCurrentTurn(actionEndTime) - Contexts.sharedInstance.combat.predictionTimeTarget.f;
 			if (hitDelta > paintedActionTipDuration)
 			{
-				FileLog.Log($"!!! PBMods missed trigger zone: delta={hitDelta}");
 				return;
 			}
 
