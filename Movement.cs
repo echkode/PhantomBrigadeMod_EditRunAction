@@ -11,15 +11,7 @@ namespace EchKode.PBMods.EditRunAction
 	{
 		private class Cache
 		{
-			public class MovementInfo
-			{
-				public string Key;
-				public int Id;
-				public float StartTime;
-				public float Duration;
-			}
-
-			public List<MovementInfo> Info = new List<MovementInfo>();
+			public List<float> Durations = new List<float>();
 			public List<Vector3> Points = new List<Vector3>();
 			public List<Area.AreaNavLink> Links = new List<Area.AreaNavLink>();
 
@@ -28,10 +20,11 @@ namespace EchKode.PBMods.EditRunAction
 
 			public void Clear()
 			{
-				Info.Clear();
+				Durations.Clear();
 				Points.Clear();
 				Links.Clear();
-				TotalLength = 0;
+				TotalLength = 0f;
+				TotalDuration = 0f;
 			}
 		}
 
@@ -139,13 +132,7 @@ namespace EchKode.PBMods.EditRunAction
 			var first = true;
 			foreach (var movement in movements)
 			{
-				cachedMovements.Info.Add(new Cache.MovementInfo()
-				{
-					Key = movement.dataKeyAction.s,
-					Id = movement.id.id,
-					StartTime = movement.startTime.f,
-					Duration = movement.duration.f,
-				});
+				cachedMovements.Durations.Add(movement.duration.f);
 
 				if (!first)
 				{
@@ -174,12 +161,12 @@ namespace EchKode.PBMods.EditRunAction
 			}
 
 			cachedMovements.TotalLength = (float)GetPathLength(cachedMovements.Points);
-			cachedMovements.TotalDuration = cachedMovements.Info.Sum(x => x.Duration);
+			cachedMovements.TotalDuration = cachedMovements.Durations.Sum();
 
 			var selected = movements.First();
 			currentEndTime = selected.startTime.f + selected.duration.f;
 
-			FileLog.Log($"!!! PBMods cached movement totals: actions={cachedMovements.Info.Count}; points={cachedMovements.Points.Count}; links={cachedMovements.Links.Count}; length={cachedMovements.TotalLength}; duration={cachedMovements.TotalDuration}");
+			FileLog.Log($"!!! PBMods cached movement totals: actions={cachedMovements.Durations.Count}; points={cachedMovements.Points.Count}; links={cachedMovements.Links.Count}; length={cachedMovements.TotalLength}; duration={cachedMovements.TotalDuration}");
 			FileLog.Log("!!! PBMods cached path points");
 			k = 0;
 			foreach (var point in cachedMovements.Points)
@@ -214,9 +201,9 @@ namespace EchKode.PBMods.EditRunAction
 		internal static void Edit(List<ActionEntity> movements)
 		{
 			var selected = movements.First();
-			var cached = cachedMovements.Info.First();
+			var cachedDuration = cachedMovements.Durations.First();
 			var clampedStartTime = PhantomBrigade.CombatUtilities.ClampTimeInCurrentTurn(selected.startTime.f + PathLengthToDuration(selected, pathLengthMinimum) + Timeline.paintedActionTipDuration);
-			var clampedEndTime = PhantomBrigade.CombatUtilities.ClampTimeInCurrentTurn(selected.startTime.f + cached.Duration);
+			var clampedEndTime = PhantomBrigade.CombatUtilities.ClampTimeInCurrentTurn(selected.startTime.f + cachedDuration);
 
 			Timeline.scrubTimeTargetMinimum = clampedStartTime;
 			Timeline.scrubTimeTargetMaximum = clampedEndTime;
@@ -245,14 +232,7 @@ namespace EchKode.PBMods.EditRunAction
 			}
 
 			currentEndTime = Contexts.sharedInstance.combat.predictionTimeTarget.f;
-
-			if (durationChange < 0f)
-			{
-				ShrinkPath(durationChange, movements);
-				return;
-			}
-
-			GrowPath(durationChange, movements);
+			ChangePath(durationChange, movements);
 		}
 
 		internal static float PathLengthToDuration(ActionEntity selected, float pathLength)
@@ -264,24 +244,19 @@ namespace EchKode.PBMods.EditRunAction
 			return pathLength / (f * num1);
 		}
 
-		private static void ShrinkPath(float durationChange, List<ActionEntity> movements)
+		private static void ChangePath(float durationChange, List<ActionEntity> movements)
 		{
-			FileLog.Log("!!! PBMods shrink path");
+			FileLog.Log("!!! PBMods change path");
 
-			var i = 0;
-			var selected = movements[i];
+			var selected = movements.First();
 			var pathLength = (float)GetPathLength(selected.movementPath.points);
-			if (pathLength <= pathLengthMinimum)
+			if (durationChange < 0f && pathLength <= pathLengthMinimum)
 			{
 				FileLog.Log("!!! PBMods shrink early exit, path at minimum");
 				return;
 			}
 
-			var totalDuration = CalculateTotalDuration(movements) + durationChange;
-			// XXX shrink tail
-			var duration = totalDuration < selected.duration.f || UtilityMath.RoughlyEqual(totalDuration, selected.duration.f)
-				? totalDuration
-				: selected.duration.f;
+			var duration = selected.duration.f + durationChange;
 			var (length, points, links) = ProcessAndTrimPath(
 				cachedMovements.Points,
 				cachedMovements.Links,
@@ -306,124 +281,23 @@ namespace EchKode.PBMods.EditRunAction
 					AccumulatedLength = length,
 				},
 			};
-			var stub = false;
 
-			totalDuration -= duration;
-			i += 1;
-			while (i < movements.Count && !UtilityMath.RoughlyEqual(totalDuration, 0f))
+			for (var i = 1;  i < movements.Count; i += 1)
 			{
-				FileLog.Log($"!!! PBMods total duration: index={i}; remaining duration={totalDuration}");
-				(i, stub, totalDuration) = AccumulateMovement(
-					i,
-					stub,
-					totalDuration,
-					segments,
-					movements[i]);
+				segments.Add(AccumulateMovement(segments, movements[i], i));
 			}
-
-			FileLog.Log($"!!! PBMods movement segments: accumulated={i}; total={movements.Count}");
 
 			UpdateMovementsFromSegments(selected.startTime.f, segments);
-
-			while (i < movements.Count)
-			{
-				FileLog.Log($"!!! PBMods dispose action: index={i}; actionID={movements[i].id.id}");
-				movements[i].isDisposed = true;
-				i += 1;
-			}
 		}
 
-		private static void GrowPath(float durationChange, List<ActionEntity> movements)
-		{
-			FileLog.Log("!!! PBMods grow path");
-
-			var i = 0;
-			var selected = movements[i];
-			var totalDuration = CalculateTotalDuration(movements) + durationChange;
-			// XXX grow tail
-			var duration = totalDuration < selected.duration.f || UtilityMath.RoughlyEqual(totalDuration, selected.duration.f)
-				? totalDuration
-				: selected.duration.f;
-			var (length, points, links) = ProcessAndTrimPath(
-				cachedMovements.Points,
-				cachedMovements.Links,
-				cachedMovements.TotalLength,
-				PathLengthToDuration(selected, cachedMovements.TotalLength),
-				duration,
-				0f);
-			var segments = new List<Accumulator>()
-			{
-				new Accumulator()
-				{
-					Action = selected,
-					Points = points,
-					Links = links,
-					Duration = duration,
-					AccumulatedLength = length,
-				},
-			};
-			var stub = false;
-
-			totalDuration -= duration;
-			i += 1;
-			while (i < movements.Count && !UtilityMath.RoughlyEqual(totalDuration, 0f))
-			{
-				FileLog.Log($"!!! PBMods total duration: index={i}; duration={totalDuration}");
-				(i, stub, totalDuration) = AccumulateMovement(
-					i,
-					stub,
-					totalDuration,
-					segments,
-					movements[i]);
-			}
-
-			FileLog.Log($"!!! PBMods movement segments: accumulated={i}; total={movements.Count}");
-
-
-			if (UtilityMath.RoughlyEqual(totalDuration, 0f))
-			{
-				UpdateMovementsFromSegments(selected.startTime.f, segments);
-				return;
-			}
-
-			AddMovements(
-				i,
-				selected,
-				movements[i - 1],
-				totalDuration,
-				segments);
-		}
-
-		private static float CalculateTotalDuration(List<ActionEntity> movements)
-		{
-			var duration = 0f;
-			foreach (var movement in movements)
-			{
-				duration += movement.duration.f;
-			}
-			return duration;
-		}
-
-		private static (int, bool, float) AccumulateMovement(
-			int i,
-			bool stub,
-			float totalDuration,
+		private static Accumulator AccumulateMovement(
 			List<Accumulator> segments,
-			ActionEntity movement)
+			ActionEntity movement,
+			int index)
 		{
-			if (totalDuration == 0f)
-			{
-				FileLog.Log("!!! PBMods accumulate path early exit on depleted duration");
-				return (i + 1, false, 0f);
-			}
-
-			var duration = stub
-				? cachedMovements.Info[i].Duration + totalDuration
-				: Mathf.Min(cachedMovements.Info[i].Duration, totalDuration);
-			var accumulatedLength = i == 0
-				? 0f
-				: segments[i - 1].AccumulatedLength;
-			FileLog.Log($"!!! PBMods accumulate path: index={i}; action={movement.id.id}; stub={stub}; acc={accumulatedLength}; duration={duration}");
+			var duration = cachedMovements.Durations[index];
+			var accumulatedLength = segments[index - 1].AccumulatedLength;
+			FileLog.Log($"!!! PBMods accumulate path: index={index}; action={movement.id.id}; acc={accumulatedLength}; duration={duration}");
 			var (length, points, links) = ProcessAndTrimPath(
 				cachedMovements.Points,
 				cachedMovements.Links,
@@ -432,38 +306,19 @@ namespace EchKode.PBMods.EditRunAction
 				duration,
 				accumulatedLength);
 
-			if (length < pathLengthMinimum)
-			{
-				FileLog.Log($"!!! PBMods attempt to shrink path too small: index={i}");
-				return (i - 1, true, totalDuration);
-			}
-
-			if (stub)
-			{
-				var segment = segments[i];
-				FileLog.Log($"!!! PBMods recalculating stub: index={i}; points={segment.Points.Count}; links={segment.Links.Count}; duration={segment.Duration}");
-				FileLog.Log($"!!! PBMods stub replacement: index={i}; points={points.Count}; links={links.Count}; duration={duration}");
-				segment.Points = points;
-				segment.Links = links;
-				segment.Duration = duration;
-				return (i + 1, false, 0f);
-			}
-
 			if (points.Count != links.Count + 1)
 			{
 				FileLog.Log($"!!! PBMods points/links count mismatch: action={movement.id.id}; points={points.Count}; links={links.Count}; duration={duration}");
 			}
 
-			segments.Add(new Accumulator()
+			return new Accumulator()
 			{
 				Action = movement,
 				Points = points,
 				Links = links,
 				Duration = duration,
 				AccumulatedLength = accumulatedLength + length,
-			});
-
-			return (i + 1, false, totalDuration - duration);
+			};
 		}
 
 		private static (float, List<Vector3>, List<Area.AreaNavLink>)
@@ -639,143 +494,6 @@ namespace EchKode.PBMods.EditRunAction
 			selected.isMovementPathChanged = true;
 			selected.ReplaceStartTime(startTime);
 			selected.ReplaceDuration(duration);
-		}
-
-		private static void AddMovements(
-			int cacheIndex,
-			ActionEntity selected,
-			ActionEntity lastMovement,
-			float totalDuration,
-			List<Accumulator> segments)
-		{
-			var startTime = UpdateMovementsFromSegments(selected.startTime.f, segments);
-			var newActionStartIndex = segments.Count;
-			var stub = false;
-			while (cacheIndex < cachedMovements.Info.Count && !UtilityMath.RoughlyEqual(totalDuration, 0f))
-			{
-				FileLog.Log($"!!! PBMods total duration: index={cacheIndex}; duration={totalDuration}");
-				(cacheIndex, stub, totalDuration) = AccumulateMovement(
-					cacheIndex,
-					stub,
-					totalDuration,
-					segments,
-					lastMovement);
-			}
-
-			var combatEntity = PhantomBrigade.IDUtility.GetCombatEntity(selected.actionOwner.combatID);
-			CreateMovementActions(
-				combatEntity,
-				newActionStartIndex,
-				startTime,
-				segments);
-		}
-
-		private static void CreateMovementActions(
-			CombatEntity combatEntity,
-			int startIndex,
-			float startTime,
-			List<Accumulator> segments)
-		{
-			for (var i = startIndex; i < segments.Count; i += 1)
-			{
-				var segment = segments[i];
-				FileLog.Log($"!!! PBMods create action from segment: index={i}; startTime={startTime}; duration={segment.Duration}; points={segment.Points.Count}");
-				var (ok, action) = CreatePathAction(
-					combatEntity,
-					cachedMovements.Info[i].Key,
-					segment.Points,
-					segment.Links,
-					startTimeOverride: startTime);
-				if (!ok)
-				{
-					continue;
-				}
-				startTime += segment.Duration;
-				RegisterAction(action);
-				cachedMovements.Info[i].Id = action.id.id;
-			}
-		}
-
-		private static (bool Ok, ActionEntity Action)
-			CreatePathAction(
-			  CombatEntity combatEntity,
-			  string pathActionKey,
-			  List<Vector3> points,
-			  List<Area.AreaNavLink> links,
-			  bool aiAction = false,
-			  float startTimeOverride = -1f)
-		{
-			// Taken from ActionUtility.CreatePathAction() which wasn't returning the newly created action entity.
-
-			if (points == null || points.Count < 2)
-			{
-				return (false, null);
-			}
-
-			if (links == null || links.Count < 1)
-			{
-				return (false, null);
-			}
-
-			var persistentEntity = PhantomBrigade.IDUtility.GetLinkedPersistentEntity(combatEntity);
-			if (persistentEntity == null)
-			{
-				return (false, null);
-			}
-
-			var entry = DataMultiLinker<DataContainerAction>.GetEntry(pathActionKey);
-			if (entry == null)
-			{
-				return (false, null);
-			}
-
-			var pathLength = (float)GetPathLength(points);
-			if ((double)pathLength < pathLengthMinimum)
-			{
-				return (false, null);
-			}
-
-			var f = combatEntity.movementSpeedCurrent.f;
-			var dataMovement = entry.dataMovement;
-			var num1 = dataMovement != null ? dataMovement.movementSpeedScalar : 1f;
-			var num2 = pathLength / (f * num1);
-			var i1 = (float)Contexts.sharedInstance.combat.turnLength.i;
-			var i2 = Contexts.sharedInstance.combat.currentTurn.i;
-			var startTime = (double)startTimeOverride < 0.0 ? PhantomBrigade.ActionUtility.GetLastActionTime(combatEntity, true) : startTimeOverride;
-			var num3 = num2;
-			var num5 = i1 * (i2 + 1);
-			if ((double)startTime >= (double)num5)
-			{
-				return (false, null);
-			}
-
-			var num6 = Mathf.Min(num3, num5 - startTime);
-			if ((double)num6 < 0.25)
-			{
-				return (false, null);
-			}
-
-			var actionEntity = DataHelperAction.InstantiateAction(combatEntity, pathActionKey, startTime, out var valid);
-			if (!valid)
-			{
-				actionEntity.isDestroyed = true;
-				return (false, null);
-			}
-
-			actionEntity.AIAction = aiAction;
-			actionEntity.ReplaceDuration(num3);
-			actionEntity.ReplaceMovementPath(points, links);
-			actionEntity.isMovementPathChanged = true;
-
-			return (true, actionEntity);
-		}
-
-		private static void RegisterAction(ActionEntity actionEntity)
-		{
-			var id = actionEntity.id.id;
-			var uiObject = UIHelper.CreateUIObject(CIViewCombatTimeline.ins.prefabAction, CIViewCombatTimeline.ins.holderActions);
-			CIViewCombatTimeline.ins.ConfigureActionPlanned(uiObject, id);
-			Timeline.helpersActionsPlanned.Add(id, uiObject);
 		}
 	}
 }
