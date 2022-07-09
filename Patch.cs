@@ -1,4 +1,7 @@
-﻿using HarmonyLib;
+﻿// Copyright (c) 2022 EchKode
+// SPDX-License-Identifier: BSD-3-Clause
+
+using HarmonyLib;
 
 namespace EchKode.PBMods.EditRunAction
 {

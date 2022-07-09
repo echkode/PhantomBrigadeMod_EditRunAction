@@ -1,4 +1,7 @@
-﻿using System.Collections.Generic;
+﻿// Copyright (c) 2022 EchKode
+// SPDX-License-Identifier: BSD-3-Clause
+
+using System.Collections.Generic;
 
 using HarmonyLib;
 using UnityEngine;
