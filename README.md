@@ -1,5 +1,7 @@
 **EditRunAction**
 ----
+**This mod is obsolete. I created this mod early on in exploration of the game codebase and I have not kept the code up-to-date with the latest release.**
+
 A library mod for [Phantom Brigade (Alpha)](https://braceyourselfgames.com/phantom-brigade/) which enables changing the length of a run action in the timeline.
 
 It is compatible with game version **0.20.0**. All library mods are fragile and susceptible to breakage whenever a new version is released.
